@@ -1,5 +1,5 @@
 {
-    "name": "paper-trading-simulator",
+    "name": "paper-trading",
     "version": "1.0.0",
     "scripts": {
         "vercel-install": "npm install && cd client && npm install && cd ../server && npm install",

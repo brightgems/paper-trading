@@ -11,7 +11,7 @@ Includes an MCP server exposing 20 tools for AI agents to create strategies, imp
 ## Architecture
 
 ```
-paper-trading-simulator/
+paper-trading/
 ├── server/                    # Node.js Express backend
 │   ├── config/db.js           # SQLite schema (better-sqlite3)
 │   ├── controllers/
@@ -108,7 +108,7 @@ node --test tests/api.test.js
 mcp_servers:
   paper-trading:
     command: "node"
-    args: ["/path/to/paper-trading-simulator/mcp/index.js"]
+    args: ["/path/to/paper-trading/mcp/index.js"]
     timeout: 60
 ```
 

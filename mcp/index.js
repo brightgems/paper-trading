@@ -15,10 +15,10 @@ import {
 // Import server modules via createRequire (ESM -> CJS interop)
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { getDB } = require('/git/paper-trading-simulator/server/config/db.js');
-const rebalanceEngine = require('/git/paper-trading-simulator/server/services/rebalanceEngine.js');
-const signalLoader = require('/git/paper-trading-simulator/server/services/signalLoader.js');
-const MarketDataService = require('/git/paper-trading-simulator/server/services/marketData.js');
+const { getDB } = require('/git/paper-trading/server/config/db.js');
+const rebalanceEngine = require('/git/paper-trading/server/services/rebalanceEngine.js');
+const signalLoader = require('/git/paper-trading/server/services/signalLoader.js');
+const MarketDataService = require('/git/paper-trading/server/services/marketData.js');
 
 // ─── Helpers ───────────────────────────────────────────────
 function todayStr() {

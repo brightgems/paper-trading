@@ -3,16 +3,16 @@
 ## Overview
 
 A stdio-based MCP server that exposes 20 tools for managing multi-strategy paper trading.
-Wraps the Express API at `/git/paper-trading-simulator/server/` using direct DB access (better-sqlite3 sync API)
+Wraps the Express API at `/git/paper-trading/server/` using direct DB access (better-sqlite3 sync API)
 and the rebalance engine. No HTTP calls — direct in-process calls to controllers/engine.
 
 ## Location
 
-- Server code: `/git/paper-trading-simulator/mcp/index.js`
-- Package: `/git/paper-trading-simulator/mcp/package.json` (already has @modelcontextprotocol/sdk installed)
-- DB: `/git/paper-trading-simulator/server/config/db.js` → `getDB()` returns better-sqlite3 instance
-- Engine: `/git/paper-trading-simulator/server/services/rebalanceEngine.js`
-- Signal loader: `/git/paper-trading-simulator/server/services/signalLoader.js`
+- Server code: `/git/paper-trading/mcp/index.js`
+- Package: `/git/paper-trading/mcp/package.json` (already has @modelcontextprotocol/sdk installed)
+- DB: `/git/paper-trading/server/config/db.js` → `getDB()` returns better-sqlite3 instance
+- Engine: `/git/paper-trading/server/services/rebalanceEngine.js`
+- Signal loader: `/git/paper-trading/server/services/signalLoader.js`
 
 ## Tech
 
@@ -141,9 +141,9 @@ import {
 // Import server modules via createRequire (ESM -> CJS interop)
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { getDB } = require('/git/paper-trading-simulator/server/config/db.js');
-const rebalanceEngine = require('/git/paper-trading-simulator/server/services/rebalanceEngine.js');
-const signalLoader = require('/git/paper-trading-simulator/server/services/signalLoader.js');
+const { getDB } = require('/git/paper-trading/server/config/db.js');
+const rebalanceEngine = require('/git/paper-trading/server/services/rebalanceEngine.js');
+const signalLoader = require('/git/paper-trading/server/services/signalLoader.js');
 
 // ... tool definitions + handlers ...
 ```
@@ -167,7 +167,7 @@ Add to `~/.hermes/config.yaml`:
 mcp_servers:
   paper-trading:
     command: "node"
-    args: ["/git/paper-trading-simulator/mcp/index.js"]
+    args: ["/git/paper-trading/mcp/index.js"]
     timeout: 60
 ```
 

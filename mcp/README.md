@@ -83,10 +83,10 @@ mcp_servers:
   paper-trading:
     command: node
     args:
-      - /git/paper-trading-simulator/mcp/index.js
+      - /git/paper-trading/mcp/index.js
     # Optional: environment variables
     env:
-      NODE_PATH: /git/paper-trading-simulator/mcp/node_modules
+      NODE_PATH: /git/paper-trading/mcp/node_modules
 ```
 
 After adding the config, restart Hermes. The 20 tools will be available as `paper-trading__list_strategies`, `paper-trading__get_strategy_detail`, etc.
@@ -100,7 +100,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "paper-trading": {
       "command": "node",
-      "args": ["/git/paper-trading-simulator/mcp/index.js"]
+      "args": ["/git/paper-trading/mcp/index.js"]
     }
   }
 }
