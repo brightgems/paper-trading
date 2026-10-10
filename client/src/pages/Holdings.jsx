@@ -51,7 +51,7 @@ const Holdings = () => {
                     </div>
                     <div className="text-right">
                         <p className="text-sm text-muted mb-1">Net Liquidation Value</p>
-                        <h2 className="text-4xl font-bold text-text tracking-tight">${totalCurrentValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+                        <h2 className="text-4xl font-bold text-text tracking-tight">¥{totalCurrentValue.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
                     </div>
                 </header>
 
@@ -61,7 +61,7 @@ const Holdings = () => {
                             <div className="p-2 bg-background rounded"><DollarSign className="w-5 h-5 text-blue-400" /></div>
                             <span className="text-xs font-semibold uppercase text-muted tracking-wider">Total Invested</span>
                         </div>
-                        <p className="text-2xl font-bold text-text">${totalInvestedValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-2xl font-bold text-text">¥{totalInvestedValue.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</p>
                     </div>
 
                     <div className="bg-surface border border-border p-6 rounded-lg shadow-sm">
@@ -70,7 +70,7 @@ const Holdings = () => {
                             <span className="text-xs font-semibold uppercase text-muted tracking-wider">Total P&L</span>
                         </div>
                         <p className={`text-2xl font-bold ${totalReturns >= 0 ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
-                            {totalReturns >= 0 ? '+' : ''}${Math.abs(totalReturns).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {totalReturns >= 0 ? '+' : ''}${Math.abs(totalReturns).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                         </p>
                         <span className={`text-xs font-medium ${totalReturns >= 0 ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
                             {totalReturnsPercent >= 0 ? '+' : ''}{totalReturnsPercent.toFixed(2)}%
@@ -83,7 +83,7 @@ const Holdings = () => {
                             <span className="text-xs font-semibold uppercase text-muted tracking-wider">Today's P&L</span>
                         </div>
                         <p className={`text-2xl font-bold ${totalDayChange >= 0 ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
-                            {totalDayChange >= 0 ? '+' : ''}${Math.abs(totalDayChange).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {totalDayChange >= 0 ? '+' : ''}${Math.abs(totalDayChange).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                         </p>
                         <span className={`text-xs font-medium ${totalDayChange >= 0 ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
                             {totalDayChangePercent >= 0 ? '+' : ''}{totalDayChangePercent.toFixed(2)}%
@@ -145,11 +145,11 @@ const Holdings = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right font-medium text-muted">{stock.quantity}</td>
-                                    <td className="px-6 py-4 text-right font-medium text-text font-mono text-sm">${stock.currentPrice.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-right text-muted font-mono text-sm">${stock.avgPrice.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right font-medium text-text font-mono text-sm">¥{stock.currentPrice.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right text-muted font-mono text-sm">¥{stock.avgPrice.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right">
                                         <div className={`text-sm font-bold ${stock.pnl >= 0 ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
-                                            {stock.pnl >= 0 ? '+' : ''}${Math.abs(stock.pnl).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                            {stock.pnl >= 0 ? '+' : ''}${Math.abs(stock.pnl).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
                                         </div>
                                         <div className={`text-[10px] ${stock.pnl >= 0 ? 'text-[#00E396]/70' : 'text-[#FF4560]/70'}`}>
                                             {stock.pnlPercentage.toFixed(2)}%

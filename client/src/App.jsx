@@ -1,39 +1,29 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider } from './context/ThemeContext';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import AuthSuccess from './pages/AuthSuccess';
-import Profile from './pages/Profile';
-import ProtectedRoute from './components/ProtectedRoute';
-import StockDetail from './pages/StockDetail';
-import Holdings from './pages/Holdings';
+import Navbar from './components/Navbar';
+import StrategyOverview from './pages/StrategyOverview';
+import StrategyDetail from './pages/StrategyDetail';
+import StrategyCompare from './pages/StrategyCompare';
+import AllPositions from './pages/AllPositions';
+import AllTransactions from './pages/AllTransactions';
+import StrategyConfig from './pages/StrategyConfig';
 import Markets from './pages/Markets';
-import Screeners from './pages/Screeners';
-import NewsPage from './pages/NewsPage';
-import Trade from './pages/Trade';
 
 function App() {
-  console.log("App rendering");
   return (
     <Router>
-      <ThemeProvider>
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <Navbar />
         <Routes>
-          <Route path="/" element={<Login />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/markets" element={<ProtectedRoute><Markets /></ProtectedRoute>} />
-          <Route path="/holdings" element={<ProtectedRoute><Holdings /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/screeners" element={<Screeners />} />
-          <Route path="/news" element={<NewsPage />} />
-          <Route path="/trade" element={<Trade />} />
-          <Route path="/stock/:symbol" element={<StockDetail />} />
-          <Route path="/auth/success" element={<AuthSuccess />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<StrategyOverview />} />
+          <Route path="/strategy/:id" element={<StrategyDetail />} />
+          <Route path="/compare" element={<StrategyCompare />} />
+          <Route path="/positions" element={<AllPositions />} />
+          <Route path="/transactions" element={<AllTransactions />} />
+          <Route path="/config" element={<StrategyConfig />} />
+          <Route path="/markets" element={<Markets />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </ThemeProvider>
+      </div>
     </Router>
   );
 }

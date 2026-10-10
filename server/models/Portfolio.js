@@ -15,6 +15,10 @@ const portfolioSchema = new mongoose.Schema({
         required: true,
         default: 0,
     },
+    availableQuantity: {
+        type: Number,
+        default: 0,  // T+1: 可卖数量(今日买入的不计入)
+    },
     avgPrice: {
         type: Number,
         required: true,

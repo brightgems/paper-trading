@@ -4,3 +4,14 @@ node_modules
 dist
 build
 coverage
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Task files
+CLINE_TASK.md
+
+# Test scratch files
+server/test_*.js

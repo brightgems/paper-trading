@@ -36,7 +36,16 @@ const userSchema = new mongoose.Schema({
     },
     balance: {
         type: Number,
-        default: 100000,
+        default: 1000000, // 100万人民币
+    },
+    // A股交易设置
+    tradeSettings: {
+        lotSize: { type: Number, default: 100 },      // 最小交易单位100股
+        tPlus1: { type: Boolean, default: true },      // T+1交易规则
+        commissionRate: { type: Number, default: 0.00025 }, // 佣金费率万2.5
+        stampDutyRate: { type: Number, default: 0.001 },    // 印花税千1(卖出)
+        transferFeeRate: { type: Number, default: 0.00002 }, // 过户费万0.2
+        minCommission: { type: Number, default: 5 },        // 最低佣金5元
     },
     tpin: {
         type: String,

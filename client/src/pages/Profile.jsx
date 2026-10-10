@@ -60,7 +60,7 @@ const Profile = () => {
     };
 
     const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
+        return new Date(dateString).toLocaleDateString('zh-CN', {
             year: 'numeric',
             month: 'long',
             day: 'numeric'
@@ -82,7 +82,7 @@ const Profile = () => {
                             <h2 className="text-xl font-bold text-text truncate">{user?.username}</h2>
                             <p className="text-sm text-muted break-all">{user?.email}</p>
                             <div className="mt-4 inline-flex items-center px-3 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full">
-                                Pro Account
+                                专业账户
                             </div>
                         </div>
 

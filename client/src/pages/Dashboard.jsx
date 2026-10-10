@@ -73,7 +73,7 @@ const Dashboard = () => {
                 {data.length > 0 ? data.map((stock, i) => (
                     <StockCard key={i} {...stock} />
                 )) : (
-                    <div className="text-muted text-sm">Loading market data...</div>
+                    <div className="text-muted text-sm">加载行情中...</div>
                 )}
             </div>
         </section>
@@ -104,25 +104,25 @@ const Dashboard = () => {
 
                         <div className="bg-gradient-to-r from-surface to-background border border-border rounded-xl p-8 flex justify-between items-center shadow-lg relative overflow-hidden mb-8">
                             <div className="relative z-10">
-                                <p className="text-muted mb-2 font-medium flex items-center gap-2"><BriefcaseIcon className="w-4 h-4" /> Total Portfolio Value</p>
-                                <h1 className="text-4xl font-bold text-text mb-2">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</h1>
+                                <p className="text-muted mb-2 font-medium flex items-center gap-2"><BriefcaseIcon className="w-4 h-4" /> 总资产</p>
+                                <h1 className="text-4xl font-bold text-text mb-2">¥{totalValue.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</h1>
                                 <p className="text-primary text-sm font-medium flex items-center gap-1">
-                                    <TrendingUp className="w-4 h-4" /> +$1,240.50 (Today)
+                                    <TrendingUp className="w-4 h-4" /> +¥0.00 (Today)
                                 </p>
                             </div>
                             <div className="text-right relative z-10">
-                                <p className="text-muted mb-1 text-sm font-medium">Buying Power</p>
-                                <p className="text-xl font-semibold text-text">${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                                <button className="mt-4 px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary hover:text-black font-bold text-sm transition-all">Deposit Funds</button>
+                                <p className="text-muted mb-1 text-sm font-medium">可用资金</p>
+                                <p className="text-xl font-semibold text-text">¥{balance.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</p>
+                                <button className="mt-4 px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-lg hover:bg-primary hover:text-black font-bold text-sm transition-all">充值</button>
                             </div>
                             <div className="absolute right-0 bottom-0 opacity-10">
                                 <Activity className="w-48 h-48 text-primary" />
                             </div>
                         </div>
 
-                        <StockRow title="Trending (Most Active)" icon={Activity} data={trending} color="text-yellow-500" />
-                        <StockRow title="Top Gainers" icon={TrendingUp} data={gainers} color="text-primary" />
-                        <StockRow title="Top Losers" icon={ArrowUpRight} data={losers} color="text-accent" />
+                        <StockRow title="热门股" icon={Activity} data={trending} color="text-yellow-500" />
+                        <StockRow title="涨幅榜" icon={TrendingUp} data={gainers} color="text-primary" />
+                        <StockRow title="跌幅榜" icon={ArrowUpRight} data={losers} color="text-accent" />
 
 
                     </div>

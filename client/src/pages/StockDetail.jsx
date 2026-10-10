@@ -183,9 +183,9 @@ const StockDetail = () => {
                         <div className="p-6">
                             {activeTab === 'Overview' && financials && (
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                    <MetricBox label="Market Cap" value={financials.marketCapitalization ? `$${financials.marketCapitalization.toLocaleString()} M` : '-'} />
-                                    <MetricBox label="52W High" value={financials['52WeekHigh'] ? `$${financials['52WeekHigh']}` : '-'} />
-                                    <MetricBox label="52W Low" value={financials['52WeekLow'] ? `$${financials['52WeekLow']}` : '-'} />
+                                    <MetricBox label="总市值" value={financials.marketCapitalization ? `$${financials.marketCapitalization.toLocaleString()} M` : '-'} />
+                                    <MetricBox label="52周高" value={financials['52WeekHigh'] ? `$${financials['52WeekHigh']}` : '-'} />
+                                    <MetricBox label="52周低" value={financials['52WeekLow'] ? `$${financials['52WeekLow']}` : '-'} />
                                     <MetricBox label="P/E Ratio" value={financials.peTTM ? financials.peTTM.toFixed(2) : '-'} />
                                     <MetricBox label="EPS" value={financials.epsTTM ? financials.epsTTM.toFixed(2) : '-'} />
                                     <MetricBox label="Div Yield" value={financials.dividendYieldIndicatedAnnual ? `${financials.dividendYieldIndicatedAnnual.toFixed(2)}%` : '-'} />

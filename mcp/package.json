@@ -1,0 +1,26 @@
+{
+  "name": "paper-trading-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for multi-strategy paper trading simulator — exposes 20 tools for AI agents to query strategies, import signals/backtests, trigger rebalances, and manage portfolio data.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "paper-trading",
+    "quant",
+    "strategy",
+    "model-context-protocol"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "better-sqlite3": "^13.0.3",
+    "zod": "^3.25.76"
+  }
+}
