@@ -1,52 +1,129 @@
-# 🚀 Vercel Deployment Guide
+# Deployment Guide
 
-Your project is now fully configured for a production-ready Vercel deployment.
+## Docker 部署（推荐）
 
-## 📋 Pre-Deployment Configuration
+### 一键启动
 
-The following files have been modified to support Vercel:
-1.  **`vercel.json`**: Created to tell Vercel how to build both your Frontend (`client`) and Backend (`server`) together.
-2.  **`server/index.js`**: Updated to export the app for Vercel's serverless environment while still working locally.
-3.  **`client/src/services/api.js`**: Updated to use relative `/api` paths.
-4.  **`client/vite.config.js`**: Added a proxy so local development still works seamlessly.
+```bash
+cd /git/paper-trading
+docker compose up -d --build
+```
 
-## 🛠️ Deployment Steps
+服务启动后访问 `http://localhost:5001`，前端和 API 同在一个端口。
 
-### 1. Push to GitHub
-Ensure you have committed and pushed all the latest changes (including the new `vercel.json`).
+### 架构
 
-### 2. Import to Vercel
-1.  Go to the [Vercel Dashboard](https://vercel.com/new).
-2.  Import your GitHub repository.
-3.  **Root Directory**: Keep it as `./` (Root). Do **NOT** select `client` or `server`.
-4.  **Framework Preset**: Vercel might not detect one because of the custom structure. That is fine. The `vercel.json` handles it.
+- **多阶段构建**：Stage 1 构建前端 (Vite build → dist)，Stage 2 编译后端依赖 (better-sqlite3 native binding)，Stage 3 组装生产镜像
+- **单容器**：Express 同时服务 API (`/api/*`) 和前端静态文件 (SPA fallback)
+- **SQLite 持久化**：数据卷 `paper-trading-data` 挂载到 `/app/server/data`
+- **信号文件**：宿主 `/git/quant_factors/results` 只读挂载到 `/data/signals`
 
-### 3. Environment Variables (Critical)
-You MUST add the following Environment Variables in Vercel under **Settings > Environment Variables**.
+### docker-compose.yml
 
-| Variable | Value | Description |
-| :--- | :--- | :--- |
-| `MONGO_URI` | `mongodb+srv://...` | Same as your local .env |
-| `JWT_SECRET` | `secret123` | Secure secret string |
-| `SESSION_SECRET`| `paper_trading...` | Secure secret string |
-| `FINNHUB_API_KEY` | `d4u7...` | Your API Key |
-| `GOOGLE_CLIENT_ID` | `3267...` | From Google Console |
-| `GOOGLE_CLIENT_SECRET` | `GOCSPX...` | From Google Console |
-| `GOOGLE_CALLBACK_URL` | `https://[YOUR-PROJECT].vercel.app/api/auth/google/callback` | **See Note Below** |
-| `CLIENT_URL` | `https://[YOUR-PROJECT].vercel.app` | The domain Vercel gives you |
+```yaml
+services:
+  paper-trading:
+    build: .
+    container_name: paper-trading
+    ports:
+      - "5001:5001"
+    volumes:
+      - paper-trading-data:/app/server/data
+      - /git/quant_factors/results:/data/signals:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+    restart: unless-stopped
 
-> **⚠️ Google Auth Callback Note**:
-> Once deployed, Vercel will give you a domain (e.g., `paper-trading.vercel.app`).
-> You MUST update this `GOOGLE_CALLBACK_URL` variable to use that domain instead of `localhost`.
-> You MUST also add this new URL to your **Google Cloud Console** authorized redirect URIs.
+volumes:
+  paper-trading-data:
+```
 
-### 4. Deploy
-Click **Deploy**. Vercel will read the `vercel.json`, build the React frontend, build the Node backend, and route them correctly.
+### 常用命令
 
-## ✅ Verification
-- **Frontend**: Should load at your main domain.
-- **Backend API**: Accessible at `/api/trade/portfolio` etc.
-- **Auth**: Google Login should redirect to Google and back to your Vercel app (once you update the Console).
+```bash
+# 构建并启动
+docker compose up -d --build
 
-## 💻 Local Development
-Additional benefit: You can now run `npm run dev` in both folders and `localhost:5173` will work perfectly, with the frontend correctly talking to `localhost:5001`.
+# 查看日志
+docker compose logs -f
+
+# 重启
+docker compose restart
+
+# 停止
+docker compose down
+
+# 更新代码后重新部署
+git pull && docker compose up -d --build
+```
+
+### 数据备份
+
+SQLite 数据库在 Docker volume 中，备份方法：
+
+```bash
+# 导出
+docker exec paper-trading sqlite3 /app/server/data/strategies.db ".backup /app/server/data/backup.db"
+docker cp paper-trading:/app/server/data/backup.db ./backup.db
+
+# 恢复
+docker cp ./backup.db paper-trading:/app/server/data/strategies.db
+docker compose restart
+```
+
+---
+
+## 本地开发
+
+### 后端
+
+```bash
+cd server
+npm install
+npm run dev      # nodemon, port 5001
+```
+
+### 前端
+
+```bash
+cd client
+npm install
+npm run dev      # Vite dev server, port 5173, proxy /api → 5001
+```
+
+### MCP Server
+
+```bash
+cd mcp
+npm install
+node index.js    # stdio MCP server
+```
+
+### 测试
+
+```bash
+cd server
+node --test tests/api.test.js
+```
+
+---
+
+## PM2 部署（替代方案）
+
+如果不使用 Docker：
+
+```bash
+# 1. 构建前端
+cd client && npm ci && npm run build
+
+# 2. 安装后端依赖
+cd ../server && npm ci
+
+# 3. PM2 启动
+pm2 start index.js --name paper-trading
+pm2 save
+pm2 startup    # 开机自启
+```
+
+注意：PM2 模式下需要手动构建前端，且 better-sqlite3 需要与本机 Node 版本匹配的编译环境。

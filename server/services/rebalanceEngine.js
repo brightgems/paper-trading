@@ -521,6 +521,15 @@ async function rebalance(strategyId, options = {}) {
             const price = priceMap[signal.symbol] || signal.close || 0;
             if (price <= 0) continue;
 
+            // Fetch real stock name via marketData (CSV signals have no name column)
+            let stockName = signal.name || signal.symbol;
+            try {
+                const quote = await MarketDataService.getFullQuote(signal.symbol);
+                if (quote && quote.name && quote.name !== signal.symbol) {
+                    stockName = quote.name;
+                }
+            } catch (e) { /* fallback to signal name */ }
+
             // Calculate buy quantity based on weight and available cash
             // Use signal weight to determine allocation
             const totalAssets = cash + holdings.reduce((s, h) => {
@@ -537,7 +546,7 @@ async function rebalance(strategyId, options = {}) {
 
             const result = executeBuy(
                 strategyId, tradeDate, signal.symbol,
-                signal.name || signal.symbol, buyQty, price,
+                stockName, buyQty, price,
                 'rebalance', signal.rank
             );
             if (result) {
@@ -545,7 +554,7 @@ async function rebalance(strategyId, options = {}) {
                 // Add to holdings
                 holdings.push({
                     symbol: signal.symbol,
-                    name: signal.name || signal.symbol,
+                    name: stockName,
                     quantity: buyQty,
                     available_quantity: 0,  // T+1: not available to sell today
                     cost_price: price,
@@ -685,12 +694,189 @@ function getEngineStatus() {
     };
 }
 
+/**
+ * Backfill stock names for existing holdings, transactions, and signals.
+ *
+ * CSV-loaded signals (e.g. top10_csv) only carry symbol/close/rank — no name.
+ * This updates rows whose name is NULL, empty, or equal to the symbol by
+ * fetching the real Chinese stock name from the marketData service. Existing
+ * real names are reused to minimize API calls.
+ *
+ * @param {string} strategyId
+ * @returns {{ updated: number, nameMap: Object }}
+ */
+async function backfillNames(strategyId) {
+    const db = getDB();
+
+    // Gather distinct (symbol, name) rows across the three tables
+    const rows = [
+        ...db.prepare(`SELECT DISTINCT symbol, name FROM holdings WHERE strategy_id = ?`).all(strategyId),
+        ...db.prepare(`SELECT DISTINCT symbol, name FROM transactions WHERE strategy_id = ?`).all(strategyId),
+        ...db.prepare(`SELECT DISTINCT symbol, name FROM signals WHERE strategy_id = ?`).all(strategyId),
+    ];
+
+    // 1. Reuse names already present in the DB
+    const nameMap = {};
+    for (const row of rows) {
+        if (row.name && row.name !== '' && row.name !== row.symbol) {
+            nameMap[row.symbol] = row.name;
+        }
+    }
+
+    // 2. For symbols still missing a name, fetch via marketData API
+    const allSymbols = [...new Set(rows.map(r => r.symbol))];
+    for (const symbol of allSymbols) {
+        if (nameMap[symbol]) continue;
+        try {
+            const quote = await MarketDataService.getFullQuote(symbol);
+            if (quote && quote.name && quote.name !== symbol) {
+                nameMap[symbol] = quote.name;
+            }
+        } catch (e) { /* skip this symbol */ }
+    }
+
+    // 3. Update rows whose name is NULL/empty/== symbol
+    const stmts = [
+        db.prepare(`UPDATE holdings SET name = ? WHERE strategy_id = ? AND symbol = ? AND (name IS NULL OR name = '' OR name = symbol)`),
+        db.prepare(`UPDATE transactions SET name = ? WHERE strategy_id = ? AND symbol = ? AND (name IS NULL OR name = '' OR name = symbol)`),
+        db.prepare(`UPDATE signals SET name = ? WHERE strategy_id = ? AND symbol = ? AND (name IS NULL OR name = '' OR name = symbol)`),
+    ];
+    const tx = db.transaction((entries) => {
+        for (const [symbol, name] of entries) {
+            for (const stmt of stmts) stmt.run(name, strategyId, symbol);
+        }
+    });
+    tx(Object.entries(nameMap));
+
+    return { updated: Object.keys(nameMap).length, nameMap };
+}
+
+/**
+ * Check stop-loss/take-profit for all holdings of a strategy.
+ * Runs independently of rebalance (e.g. daily at 14:30 via scheduler).
+ * T+1 rule: can sell any day (uses available_quantity).
+ * @param {string} strategyId
+ * @returns {Promise<{strategyId, actions: Array, checked: number, tradeDate: string}>}
+ */
+async function checkStopLossTakeProfit(strategyId) {
+    const strategy = getStrategy(strategyId);
+    if (!strategy) throw new Error(`Strategy not found: ${strategyId}`);
+    if (strategy.status !== 'active') {
+        return { strategyId, actions: [], checked: 0, skipped: 'not active' };
+    }
+
+    const tradeDate = todayStr();
+    const holdings = getLatestHoldings(strategyId);
+    if (holdings.length === 0) {
+        return { strategyId, actions: [], checked: 0, tradeDate };
+    }
+
+    const stopLoss = strategy.stop_loss ?? -5.0;
+    const takeProfit = strategy.take_profit ?? 15.0;
+
+    // Fetch current prices
+    const priceMap = {};
+    for (const h of holdings) {
+        try { priceMap[h.symbol] = await MarketDataService.getRealTimePrice(h.symbol); }
+        catch (e) { priceMap[h.symbol] = h.current_price; }
+    }
+
+    const actions = [];
+    const latestNav = getLatestNav(strategyId);
+    let cash = latestNav ? latestNav.cash : strategy.initial_capital;
+
+    for (const holding of holdings) {
+        const price = priceMap[holding.symbol] || holding.current_price;
+        const profitPct = holding.cost_price > 0
+            ? ((price - holding.cost_price) / holding.cost_price) * 100 : 0;
+
+        if (profitPct <= stopLoss || profitPct >= takeProfit) {
+            const reason = profitPct <= stopLoss ? 'stop_loss' : 'take_profit';
+            const result = executeSell(strategyId, tradeDate, holding, holding.available_quantity, reason, price);
+            if (result) {
+                cash += result.netAmount;
+                holding.quantity -= result.quantity;
+                holding.available_quantity = 0;
+                actions.push({ type: reason, symbol: holding.symbol, quantity: result.quantity,
+                    price, amount: result.amount, profitPct: parseFloat(profitPct.toFixed(2)) });
+            }
+        }
+    }
+
+    // Persist updated holdings + NAV if any positions were sold
+    if (actions.length > 0) {
+        const remaining = holdings.filter(h => h.quantity > 0);
+        const finalHoldings = remaining.map(h => {
+            const price = priceMap[h.symbol] || h.current_price;
+            const mv = price * h.quantity;
+            const profitPct = h.cost_price > 0
+                ? parseFloat(((price - h.cost_price) / h.cost_price * 100).toFixed(2)) : 0;
+            return { symbol: h.symbol, name: h.name, quantity: h.quantity,
+                available_quantity: h.available_quantity, cost_price: h.cost_price,
+                current_price: price, market_value: parseFloat(mv.toFixed(2)),
+                profit_pct: profitPct, weight: 0 };
+        });
+        updateHoldings(strategyId, tradeDate, finalHoldings);
+        snapshotNAV(strategyId, tradeDate, cash, finalHoldings, 0);
+    }
+
+    return { strategyId, actions, checked: holdings.length, tradeDate };
+}
+
+/**
+ * Update NAV snapshot with latest market prices.
+ * Fetches current prices via marketData service, recomputes market values,
+ * and inserts/updates the NAV snapshot for today.
+ * @param {string} strategyId
+ * @returns {Promise<{strategyId, tradeDate, totalAssets, cash, marketValue, positionRatio}>}
+ */
+async function updateNavSnapshot(strategyId) {
+    const strategy = getStrategy(strategyId);
+    if (!strategy) throw new Error(`Strategy not found: ${strategyId}`);
+    if (strategy.status !== 'active') return { strategyId, skipped: 'not active' };
+
+    const tradeDate = todayStr();
+    const holdings = getLatestHoldings(strategyId);
+    const latestNav = getLatestNav(strategyId);
+    const cash = latestNav ? latestNav.cash : strategy.initial_capital;
+
+    const finalHoldings = [];
+    for (const h of holdings) {
+        let price = h.current_price;
+        try { price = await MarketDataService.getRealTimePrice(h.symbol); }
+        catch (e) { /* use last known price */ }
+        const mv = price * h.quantity;
+        const profitPct = h.cost_price > 0
+            ? parseFloat(((price - h.cost_price) / h.cost_price * 100).toFixed(2)) : 0;
+        finalHoldings.push({ symbol: h.symbol, name: h.name, quantity: h.quantity,
+            available_quantity: h.available_quantity, cost_price: h.cost_price,
+            current_price: price, market_value: parseFloat(mv.toFixed(2)),
+            profit_pct: profitPct, weight: 0 });
+    }
+
+    if (finalHoldings.length > 0) updateHoldings(strategyId, tradeDate, finalHoldings);
+
+    let benchmarkReturn = 0;
+    try {
+        const indices = await MarketDataService.getIndices();
+        const bench = indices.find(i => i.symbol === strategy.benchmark);
+        if (bench) benchmarkReturn = bench.changePercent || 0;
+    } catch (e) { /* benchmark fetch failed */ }
+
+    const nav = snapshotNAV(strategyId, tradeDate, cash, finalHoldings, benchmarkReturn);
+    return { strategyId, tradeDate, totalAssets: nav.totalAssets, cash: nav.cash,
+        marketValue: nav.marketValue, positionRatio: nav.positionRatio };
+}
+
 module.exports = {
     rebalance,
     rebalanceAll,
     getEngineStatus,
+    backfillNames,
     seedStrategies,
     snapshotNAV,
+    checkStopLossTakeProfit,
+    updateNavSnapshot,
     calcCosts,
     calcSharpe,
     roundToLot,

@@ -7,6 +7,7 @@ import AllPositions from './pages/AllPositions';
 import AllTransactions from './pages/AllTransactions';
 import StrategyConfig from './pages/StrategyConfig';
 import Markets from './pages/Markets';
+import StockDetail from './pages/StockDetail';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Route path="/transactions" element={<AllTransactions />} />
           <Route path="/config" element={<StrategyConfig />} />
           <Route path="/markets" element={<Markets />} />
+          <Route path="/stock/:symbol" element={<StockDetail />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

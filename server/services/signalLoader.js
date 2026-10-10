@@ -219,6 +219,7 @@ function loadBacktestImport(csvPath) {
  */
 function loadSignals(source, config = {}) {
     switch (source) {
+        case 'python_script':
         case 'top10_csv':
             return loadTop10CSV(config.csv_path || CSV_PATH);
         case 'quantdb_factor':

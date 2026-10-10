@@ -18,6 +18,13 @@ router.get('/engine/status', engineController.status);
 router.post('/engine/rebalance-all', engineController.triggerRebalanceAll);
 router.post('/engine/rebalance/:strategyId', engineController.triggerRebalance);
 
+// ─── Scheduler Control (before /:strategyId to avoid param collision) ──
+router.get('/engine/scheduler/status', engineController.getSchedulerStatus);
+router.post('/engine/scheduler/start', engineController.startScheduler);
+router.post('/engine/scheduler/stop', engineController.stopScheduler);
+router.post('/engine/run-all', engineController.runAllStrategies);
+router.post('/engine/run/:strategyId', engineController.runStrategyCycle);
+
 // ─── Strategy Comparison (before /:strategyId) ─────────────
 
 router.get('/compare/all', portfolioController.compareStrategies);

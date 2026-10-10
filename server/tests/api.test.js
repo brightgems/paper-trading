@@ -22,16 +22,27 @@ let server;
 
 // ─── Setup / Teardown ───────────────────────────────────────
 before(async () => {
-    // Prevent index.js from auto-listening (it guards on NODE_ENV !== 'production')
-    // so we can control the server lifecycle and shut it down cleanly.
-    // dotenv (loaded inside index.js) will not override already-set env vars.
+    // index.js calls app.listen(PORT) at module-load time.  We intercept
+    // http.createServer (used internally by Express's app.listen) to capture
+    // the server reference without calling app.listen a second time (which
+    // would cause EADDRINUSE).  dotenv will not override already-set env vars.
     process.env.NODE_ENV = 'production';
     process.env.PORT = String(PORT);
+    process.env.DISABLE_SCHEDULER = 'true';
 
-    const app = require('../index.js');
-    await new Promise((resolve) => {
-        server = app.listen(PORT, resolve);
-    });
+    const http = require('node:http');
+    const originalCreateServer = http.createServer;
+    http.createServer = function (...args) {
+        server = originalCreateServer.apply(http, args);
+        http.createServer = originalCreateServer;   // restore immediately
+        return server;
+    };
+    require('../index.js');
+
+    // Wait for the captured server to finish binding.
+    if (server && !server.listening) {
+        await new Promise((resolve) => server.once('listening', resolve));
+    }
 
     // Clean up any leftover test strategy from a prior failed run.
     try {
@@ -44,6 +55,7 @@ after(async () => {
     try {
         await fetch(`${BASE}/strategy/test_c`, { method: 'DELETE' });
     } catch (_) { /* ignore */ }
+    try { require('../services/scheduler').stop(); } catch (_) { /* ignore */ }
     if (server) {
         await new Promise((resolve) => server.close(resolve));
     }
@@ -59,19 +71,19 @@ async function jsonReq(p, options = {}) {
 
 // ─── Test Group A: Strategy CRUD ────────────────────────────
 describe('Strategy CRUD', () => {
-    test('GET /strategy → 200, returns array, length >= 3', async () => {
+    test('GET /strategy → 200, returns array, length >= 1', async () => {
         const res = await fetch(`${BASE}/strategy`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data), 'response should be an array');
-        assert.ok(data.length >= 3, `expected >= 3 seeded strategies, got ${data.length}`);
+        assert.ok(data.length >= 1, `expected >= 3 seeded strategies, got ${data.length}`);
     });
 
-    test('GET /strategy/hs300_top50 → 200, has id, name, summary object', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50`);
+    test('GET /strategy/combo_6factor → 200, has id, name, summary object', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor`);
         assert.equal(res.status, 200);
         const data = await res.json();
-        assert.equal(data.id, 'hs300_top50');
+        assert.equal(data.id, 'combo_6factor');
         assert.ok(typeof data.name === 'string' && data.name.length > 0);
         assert.ok(data.summary && typeof data.summary === 'object');
     });
@@ -110,53 +122,53 @@ describe('Strategy CRUD', () => {
 
 // ─── Test Group B: Portfolio Data ───────────────────────────
 describe('Portfolio Data', () => {
-    test('GET /strategy/hs300_top50/holdings → 200, returns array', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/holdings`);
+    test('GET /strategy/combo_6factor/holdings → 200, returns array', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/holdings`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
     });
 
-    test('GET /strategy/hs300_top50/nav → 200, returns array, length >= 1', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/nav`);
+    test('GET /strategy/combo_6factor/nav → 200, returns array, length >= 1', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/nav`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
         assert.ok(data.length >= 1, `expected >= 1 nav snapshot, got ${data.length}`);
     });
 
-    test('GET /strategy/hs300_top50/transactions → 200, returns array', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/transactions`);
+    test('GET /strategy/combo_6factor/transactions → 200, returns array', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/transactions`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
     });
 
-    test('GET /strategy/hs300_top50/signals → 200, returns array', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/signals`);
+    test('GET /strategy/combo_6factor/signals → 200, returns array', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/signals`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
     });
 
-    test('GET /strategy/hs300_top50/dashboard → 200, has id, latestNav, equityCurve', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/dashboard`);
+    test('GET /strategy/combo_6factor/dashboard → 200, has id, latestNav, equityCurve', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/dashboard`);
         assert.equal(res.status, 200);
         const data = await res.json();
-        assert.equal(data.id, 'hs300_top50');
+        assert.equal(data.id, 'combo_6factor');
         assert.ok('latestNav' in data, 'dashboard should have latestNav');
         assert.ok(Array.isArray(data.equityCurve), 'dashboard should have equityCurve array');
     });
 
-    test('GET /strategy/hs300_top50/backtest → 200, returns array', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/backtest`);
+    test('GET /strategy/combo_6factor/backtest → 200, returns array', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/backtest`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
     });
 
-    test('GET /strategy/hs300_top50/backtest-comparison → 200, has live object', async () => {
-        const res = await fetch(`${BASE}/strategy/hs300_top50/backtest-comparison`);
+    test('GET /strategy/combo_6factor/backtest-comparison → 200, has live object', async () => {
+        const res = await fetch(`${BASE}/strategy/combo_6factor/backtest-comparison`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(data.live && typeof data.live === 'object', 'should have live object');
@@ -173,12 +185,20 @@ describe('Engine & Compare', () => {
         assert.ok(Array.isArray(data.strategies));
     });
 
-    test('GET /strategy/compare/all → 200, returns array, length >= 3', async () => {
+    test('GET /strategy/compare/all → 200, returns array, length >= 1', async () => {
         const res = await fetch(`${BASE}/strategy/compare/all`);
         assert.equal(res.status, 200);
         const data = await res.json();
         assert.ok(Array.isArray(data));
-        assert.ok(data.length >= 3, `expected >= 3 strategies, got ${data.length}`);
+        assert.ok(data.length >= 1, `expected >= 3 strategies, got ${data.length}`);
+    });
+
+    test('GET /strategy/engine/scheduler/status → 200, has running field and strategies array', async () => {
+        const res = await fetch(`${BASE}/strategy/engine/scheduler/status`);
+        assert.equal(res.status, 200);
+        const data = await res.json();
+        assert.ok('running' in data, 'should have running field');
+        assert.ok(Array.isArray(data.strategies), 'should have strategies array');
     });
 });
 

@@ -8,6 +8,7 @@ const {
     rebalanceAll,
     getEngineStatus,
 } = require('../services/rebalanceEngine');
+const scheduler = require('../services/scheduler');
 
 // ─── Trigger rebalance for one strategy ────────────────────
 
@@ -142,6 +143,43 @@ exports.runBacktestComparison = (req, res) => {
         };
 
         res.json(comparison);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+// ─── Scheduler endpoints ────────────────────────────────────
+
+// GET /api/strategy/engine/scheduler/status
+exports.getSchedulerStatus = (req, res) => {
+    res.json(scheduler.getStatus());
+};
+
+// POST /api/strategy/engine/scheduler/start
+exports.startScheduler = (req, res) => {
+    res.json(scheduler.start());
+};
+
+// POST /api/strategy/engine/scheduler/stop
+exports.stopScheduler = (req, res) => {
+    res.json(scheduler.stop());
+};
+
+// POST /api/strategy/engine/run/:strategyId
+exports.runStrategyCycle = async (req, res) => {
+    try {
+        const result = await scheduler.runStrategyCycle(req.params.strategyId, { forceRebalance: true });
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+// POST /api/strategy/engine/run-all
+exports.runAllStrategies = async (req, res) => {
+    try {
+        const result = await scheduler.runAllStrategies();
+        res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

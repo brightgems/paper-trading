@@ -1,288 +1,258 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import api, { getStockPrice, getStockCandles, getCompanyProfile, getFinancials, getRecommendations, getCompanyNews } from '../services/api';
-import { BadgeCheck, Globe, TrendingUp, DollarSign } from 'lucide-react';
-import TpinModal from '../components/TpinModal';
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import ReactECharts from 'echarts-for-react';
+import { getStockPrice, getStockCandles } from '../services/api';
+import { ArrowLeft } from 'lucide-react';
+import { echartsBase } from '../components/ui';
+
+const TIME_RANGES = ['1W', '1M', '6M', '1Y'];
 
 const StockDetail = () => {
     const { symbol } = useParams();
-    const navigate = useNavigate();
-
     const [price, setPrice] = useState(null);
-    const [profile, setProfile] = useState(null);
+    const [quote, setQuote] = useState(null);
     const [chartData, setChartData] = useState([]);
-    const [financials, setFinancials] = useState(null);
-    const [recommendations, setRecommendations] = useState([]);
-    const [news, setNews] = useState([]);
-
-    const [activeTab, setActiveTab] = useState('Overview');
-    const [timeRange, setTimeRange] = useState('1D');
-    const [quantity, setQuantity] = useState('');
-    const [orderType, setOrderType] = useState('BUY');
-    const [showTpinModal, setShowTpinModal] = useState(false);
+    const [timeRange, setTimeRange] = useState('1M');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        const fetchAllData = async () => {
+        let cancelled = false;
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
             try {
-                const [priceRes, profileRes, recsRes, newsRes] = await Promise.all([
+                const [priceRes, candlesRes] = await Promise.all([
                     getStockPrice(symbol),
-                    getCompanyProfile(symbol),
-                    getRecommendations(symbol),
-                    getCompanyNews(symbol)
+                    getStockCandles(symbol, timeRange),
                 ]);
-
+                if (cancelled) return;
                 setPrice(priceRes.data.price);
-                setProfile(profileRes.data);
-                setRecommendations(recsRes.data);
-                setNews(newsRes.data);
-
-                const candles = await getStockCandles(symbol, timeRange);
-                setChartData(candles.data);
-
-                const fins = await getFinancials(symbol);
-                setFinancials(fins.data.metric);
-
-            } catch (error) {
-                console.error("Error loading stock data", error);
+                setQuote(priceRes.data);
+                setChartData(candlesRes.data || []);
+            } catch (e) {
+                if (!cancelled) setError(e.message);
+            } finally {
+                if (!cancelled) setLoading(false);
             }
         };
-        fetchAllData();
+        fetchData();
+        return () => { cancelled = true; };
     }, [symbol, timeRange]);
 
-    const handleTradeClick = (e) => {
-        e.preventDefault();
-        if (!quantity || quantity <= 0) {
-            alert('Please enter a valid quantity');
-            return;
+    // Calculate MA lines
+    const calcMA = (data, period) => {
+        const result = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i < period - 1) {
+                result.push(null);
+                continue;
+            }
+            let sum = 0;
+            for (let j = 0; j < period; j++) sum += data[i - j].close;
+            result.push((sum / period).toFixed(2));
         }
-        setShowTpinModal(true);
+        return result;
     };
 
-    const handleTpinVerify = async (tpin) => {
-        try {
-            const endpoint = `/trade/${orderType.toLowerCase()}`;
-            await api.post(endpoint, { symbol, quantity, tpin });
-            alert('Order Executed Successfully!');
-            navigate('/dashboard');
-        } catch (error) {
-            throw error; // Let modal handle error display
-        }
-    };
+    const ma5 = calcMA(chartData, 5);
+    const ma20 = calcMA(chartData, 20);
 
-    const isPositive = chartData.length > 0 && chartData[chartData.length - 1].close >= chartData[0].close;
-    const chartColor = isPositive ? "#00E396" : "#FF4560";
-    const gradientId = `colorPrice-${isPositive ? 'up' : 'down'}`;
+    // Professional candlestick chart with dual y-axis
+    const chartOption = chartData.length > 0 ? {
+        ...echartsBase,
+        legend: {
+            ...echartsBase.legend,
+            data: ['日K', 'MA5', 'MA20', '成交量'],
+            top: 0,
+        },
+        xAxis: {
+            ...echartsBase.xAxis,
+            data: chartData.map(d => d.time),
+            axisLabel: {
+                ...echartsBase.xAxis.axisLabel,
+                formatter: (val) => val ? val.slice(5) : '',  // MM-DD
+            },
+        },
+        yAxis: [
+            {
+                ...echartsBase.yAxis,
+                scale: true,
+                name: '价格',
+                nameTextStyle: { color: '#64748b', fontSize: 10 },
+                // Leave 15% space at bottom for volume
+                boundaryGap: ['5%', '15%'],
+            },
+            {
+                ...echartsBase.yAxis,
+                scale: true,
+                name: '成交量',
+                nameTextStyle: { color: '#64748b', fontSize: 10 },
+                max: (val) => val.max * 4,  // Compress volume to bottom 25%
+                splitLine: { show: false },
+            },
+        ],
+        dataZoom: [
+            { type: 'inside', start: 0, end: 100 },
+            { type: 'slider', start: 0, end: 100, height: 20, bottom: 5, borderColor: '#334155', fillerColor: 'rgba(59,130,246,0.1)' },
+        ],
+        grid: { left: '8%', right: '3%', top: '12%', bottom: '18%' },
+        tooltip: {
+            ...echartsBase.tooltip,
+            trigger: 'axis',
+            axisPointer: { type: 'cross', crossStyle: { color: '#64748b' } },
+            formatter: (params) => {
+                const idx = params[0]?.dataIndex;
+                if (idx == null) return '';
+                const d = chartData[idx];
+                if (!d) return '';
+                const change = d.close - d.open;
+                const changePct = d.open > 0 ? (change / d.open * 100).toFixed(2) : '0';
+                const color = change >= 0 ? '#ef4444' : '#22c55e';
+                let html = `<div style="font-weight:600;margin-bottom:4px">${d.time}</div>`;
+                html += `<div style="color:#94a3b8">开 <span style="color:${color};font-weight:600">${d.open.toFixed(2)}</span></div>`;
+                html += `<div style="color:#94a3b8">收 <span style="color:${color};font-weight:600">${d.close.toFixed(2)}</span> <span style="color:${color}">(${changePct}%)</span></div>`;
+                html += `<div style="color:#94a3b8">高 ${d.high.toFixed(2)}</div>`;
+                html += `<div style="color:#94a3b8">低 ${d.low.toFixed(2)}</div>`;
+                html += `<div style="color:#94a3b8">量 ${(d.volume / 10000).toFixed(0)}万手</div>`;
+                if (ma5[idx]) html += `<div style="color:#f59e0b">MA5 ${ma5[idx]}</div>`;
+                if (ma20[idx]) html += `<div style="color:#3b82f6">MA20 ${ma20[idx]}</div>`;
+                return html;
+            },
+        },
+        series: [
+            {
+                name: '日K',
+                type: 'candlestick',
+                yAxisIndex: 0,
+                data: chartData.map(d => [d.open, d.close, d.low, d.high]),
+                itemStyle: {
+                    color: '#ef4444',       // A-share: red = up
+                    color0: '#22c55e',      // green = down
+                    borderColor: '#ef4444',
+                    borderColor0: '#22c55e',
+                },
+            },
+            {
+                name: 'MA5',
+                type: 'line',
+                yAxisIndex: 0,
+                data: ma5,
+                smooth: true,
+                symbol: 'none',
+                lineStyle: { color: '#f59e0b', width: 1 },
+                connectNulls: false,
+            },
+            {
+                name: 'MA20',
+                type: 'line',
+                yAxisIndex: 0,
+                data: ma20,
+                smooth: true,
+                symbol: 'none',
+                lineStyle: { color: '#3b82f6', width: 1 },
+                connectNulls: false,
+            },
+            {
+                name: '成交量',
+                type: 'bar',
+                yAxisIndex: 1,
+                data: chartData.map(d => ({
+                    value: d.volume,
+                    itemStyle: {
+                        color: d.close >= d.open
+                            ? 'rgba(239, 68, 68, 0.4)'   // red tint for up days
+                            : 'rgba(34, 197, 94, 0.4)',   // green tint for down days
+                    },
+                })),
+                barWidth: '60%',
+            },
+        ],
+    } : null;
 
     return (
-        <div className="min-h-screen bg-background text-text font-sans pb-20">
-            <TpinModal
-                isOpen={showTpinModal}
-                onClose={() => setShowTpinModal(false)}
-                onVerify={handleTpinVerify}
-                type={orderType}
-                symbol={symbol}
-                quantity={quantity}
-                price={price}
-            />
-            <Navbar />
+        <div className="max-w-[1400px] mx-auto px-6 py-8">
+            <Link to={-1} className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-100 mb-4">
+                <ArrowLeft className="w-4 h-4" /> 返回
+            </Link>
 
-
-            <div className="bg-surface border-b border-border pt-8 pb-6 px-4">
-                <div className="max-w-[1400px] mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div className="flex items-center gap-4">
-                        {profile?.logo && <img src={profile.logo} alt={symbol} className="w-16 h-16 rounded-lg bg-surface p-1 border border-border" />}
-                        <div>
-                            <h1 className="text-3xl font-bold text-text flex items-center gap-2">
-                                {profile?.name || symbol}
-                                {profile?.exchange && <span className="text-xs bg-background text-muted px-2 py-1 rounded border border-border">{profile.exchange}</span>}
-                            </h1>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-muted">
-                                <span>{symbol}</span>
-                                {profile?.weburl ? (
-                                    <a href={profile.weburl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary">
-                                        <Globe className="w-3 h-3" /> Website
-                                    </a>
-                                ) : null}
-                                <span className="flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-primary" /> FINNHUB VERIFIED</span>
-                            </div>
-                        </div>
-                    </div>
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-100">{quote?.name || symbol}</h1>
+                    <p className="text-sm text-slate-500 mt-1">{symbol}</p>
+                </div>
+                {price != null && (
                     <div className="text-right">
-                        <h2 className="text-4xl font-bold text-text">${price?.toLocaleString()}</h2>
-                        {chartData.length > 0 && (
-                            <p className={`text-sm font-medium mt-1 ${isPositive ? 'text-[#00E396]' : 'text-[#FF4560]'}`}>
-                                Live Market Data
+                        <h2 className="text-3xl font-bold text-slate-100">¥{Number(price).toFixed(2)}</h2>
+                        {quote?.changePercent != null && (
+                            <p className={`text-sm font-medium mt-1 ${quote.changePercent >= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                                {quote.change >= 0 ? '+' : ''}{Number(quote.change).toFixed(2)} ({quote.changePercent >= 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%)
                             </p>
                         )}
                     </div>
-                </div>
+                )}
             </div>
 
-            <div className="max-w-[1400px] mx-auto px-4 py-8 grid grid-cols-12 gap-8">
-
-
-                <div className="col-span-12 lg:col-span-9 space-y-8">
-
-
-                    <div className="bg-surface border border-border rounded-xl p-6 h-[500px]">
-                        <div className="flex justify-between items-center mb-6">
-                            <div className="flex bg-background rounded-lg p-1 border border-border">
-                                {['1D', '1W', '1M', '6M', '1Y'].map(range => (
-                                    <button
-                                        key={range}
-                                        onClick={() => setTimeRange(range)}
-                                        className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${timeRange === range ? 'bg-surface text-text shadow-sm border border-border' : 'text-muted hover:text-text'}`}
-                                    >
-                                        {range}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <ResponsiveContainer width="100%" height="85%">
-                            <AreaChart data={chartData}>
-                                <defs>
-                                    <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor={chartColor} stopOpacity={0.2} />
-                                        <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="time" hide />
-                                <YAxis domain={['auto', 'auto']} orientation="right" tick={{ fill: 'var(--color-muted)', fontSize: 12 }} axisLine={false} tickLine={false} />
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)', borderRadius: '8px', color: 'var(--color-text)' }}
-                                    itemStyle={{ color: chartColor }}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="close"
-                                    stroke={chartColor}
-                                    strokeWidth={2}
-                                    fillOpacity={1}
-                                    fill={`url(#${gradientId})`}
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-
-
-                    <div className="bg-surface border border-border rounded-xl overflow-hidden min-h-[400px]">
-                        <div className="border-b border-border px-6 flex gap-8">
-                            {['Overview', 'Financials', 'News'].map(tab => (
-                                <button
-                                    key={tab}
-                                    onClick={() => setActiveTab(tab)}
-                                    className={`py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-primary text-primary' : 'border-transparent text-muted hover:text-text'}`}
-                                >
-                                    {tab}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="p-6">
-                            {activeTab === 'Overview' && financials && (
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                                    <MetricBox label="总市值" value={financials.marketCapitalization ? `$${financials.marketCapitalization.toLocaleString()} M` : '-'} />
-                                    <MetricBox label="52周高" value={financials['52WeekHigh'] ? `$${financials['52WeekHigh']}` : '-'} />
-                                    <MetricBox label="52周低" value={financials['52WeekLow'] ? `$${financials['52WeekLow']}` : '-'} />
-                                    <MetricBox label="P/E Ratio" value={financials.peTTM ? financials.peTTM.toFixed(2) : '-'} />
-                                    <MetricBox label="EPS" value={financials.epsTTM ? financials.epsTTM.toFixed(2) : '-'} />
-                                    <MetricBox label="Div Yield" value={financials.dividendYieldIndicatedAnnual ? `${financials.dividendYieldIndicatedAnnual.toFixed(2)}%` : '-'} />
-                                    <MetricBox label="Beta" value={financials.beta ? financials.beta.toFixed(2) : '-'} />
-                                </div>
-                            )}
-
-                            {activeTab === 'Financials' && (
-                                <div className="text-center py-10 text-muted">
-                                    <p>Detailed Financial Statements Table (Income/Balance/Cash Flow)</p>
-                                    <p className="text-xs mt-2">Data provided by Finnhub Pro</p>
-                                </div>
-                            )}
-
-                            {activeTab === 'News' && (
-                                <div className="space-y-4">
-                                    {news.map((item) => (
-                                        <a key={item.id} href={item.url} target="_blank" className="block p-4 rounded-lg bg-background hover:bg-surface border border-transparent hover:border-border transition-colors">
-                                            <h4 className="text-text font-medium">{item.headline}</h4>
-                                            <p className="text-xs text-muted mt-2">{item.source} - {new Date(item.datetime * 1000).toLocaleDateString()}</p>
-                                        </a>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                </div>
-
-
-                <div className="col-span-12 lg:col-span-3 space-y-6">
-
-
-                    <div className="bg-surface border border-border rounded-xl p-6">
-                        <h3 className="text-lg font-bold text-text mb-4">Trade {symbol}</h3>
-                        <div className="flex bg-background rounded-lg p-1 mb-4 border border-border">
-                            <button onClick={() => setOrderType('BUY')} className={`flex-1 py-2 text-sm font-bold rounded ${orderType === 'BUY' ? 'bg-primary text-black' : 'text-muted hover:text-text'}`}>Buy</button>
-                            <button onClick={() => setOrderType('SELL')} className={`flex-1 py-2 text-sm font-bold rounded ${orderType === 'SELL' ? 'bg-accent text-white' : 'text-muted hover:text-text'}`}>Sell</button>
-                        </div>
-                        <form onSubmit={handleTradeClick} className="space-y-4">
-                            <div>
-                                <label className="text-xs text-muted mb-1 block">Quantity</label>
-                                <input
-                                    type="number"
-                                    value={quantity}
-                                    onChange={(e) => setQuantity(e.target.value)}
-                                    className="w-full bg-background border border-border text-text rounded-lg p-3 outline-none focus:border-primary"
-                                    placeholder="0"
-                                />
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted">Est. Cost</span>
-                                <span className="text-text font-medium">${(price * (quantity || 0)).toLocaleString()}</span>
-                            </div>
-                            <button className="w-full py-3 bg-primary text-black font-bold rounded-lg hover:bg-primary/90 transition-colors">
-                                Submit Order
-                            </button>
-                        </form>
-                    </div>
-
-
-                    {recommendations.length > 0 && (
-                        <div className="bg-surface border border-border rounded-xl p-6">
-                            <h3 className="text-lg font-bold text-text mb-4">Analyst Ratings</h3>
-                            <div className="space-y-2">
-
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-primary">Buy</span>
-                                    <span className="text-text">{recommendations[0].buy}</span>
-                                </div>
-                                <div className="w-full bg-background h-2 rounded-full overflow-hidden border border-border">
-                                    <div className="bg-primary h-full" style={{ width: `${(recommendations[0].buy / (recommendations[0].buy + recommendations[0].hold + recommendations[0].sell)) * 100}%` }}></div>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-yellow-500">Hold</span>
-                                    <span className="text-text">{recommendations[0].hold}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-accent">Sell</span>
-                                    <span className="text-text">{recommendations[0].sell}</span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                </div>
-
+            {/* Time range selector */}
+            <div className="flex gap-1 mb-4 bg-slate-800/50 border border-slate-700 rounded-lg p-1 w-fit">
+                {TIME_RANGES.map(range => (
+                    <button
+                        key={range}
+                        onClick={() => setTimeRange(range)}
+                        className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                            timeRange === range
+                                ? 'bg-slate-700 text-slate-100'
+                                : 'text-slate-400 hover:text-slate-100'
+                        }`}
+                    >
+                        {range}
+                    </button>
+                ))}
             </div>
+
+            {/* Chart */}
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
+                {loading ? (
+                    <div className="flex justify-center py-20">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400" />
+                    </div>
+                ) : error ? (
+                    <p className="text-center py-20 text-red-400">加载失败: {error}</p>
+                ) : chartOption ? (
+                    <ReactECharts option={chartOption} style={{ height: '500px' }} />
+                ) : (
+                    <p className="text-center py-20 text-slate-500">暂无行情数据</p>
+                )}
+            </div>
+
+            {/* Quote details */}
+            {quote && !loading && (
+                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+                    <h3 className="text-sm font-medium text-slate-300 mb-4">行情详情</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {[
+                            { label: '昨收', value: quote.previousClose },
+                            { label: '开盘', value: quote.open },
+                            { label: '最高', value: quote.high },
+                            { label: '最低', value: quote.low },
+                            { label: '成交量(手)', value: quote.volume },
+                            { label: '成交额', value: quote.amount },
+                            { label: '涨跌额', value: quote.change },
+                            { label: '涨跌幅', value: quote.changePercent != null ? `${quote.changePercent.toFixed(2)}%` : null },
+                        ].map(({ label, value }) => (
+                            <div key={label} className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
+                                <p className="text-xs text-slate-500 mb-1">{label}</p>
+                                <p className="text-sm font-bold text-slate-200">
+                                    {value != null ? (typeof value === 'number' ? value.toLocaleString() : value) : '—'}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
-
-const MetricBox = ({ label, value }) => (
-    <div className="bg-background p-4 rounded-lg border border-border">
-        <p className="text-xs text-muted mb-1">{label}</p>
-        <p className="text-sm font-bold text-text">{value || '-'}</p>
-    </div>
-)
 
 export default StockDetail;

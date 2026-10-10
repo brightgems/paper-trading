@@ -1,0 +1,13 @@
+node_modules
+.git
+.env
+*.db
+*.db-shm
+*.db-wal
+client/node_modules
+server/node_modules
+mcp/node_modules
+CLINE_TASK.md
+server/test_*.js
+*.md
+!README.md

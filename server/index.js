@@ -21,6 +21,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const path = require('path');
+
 // ─── Routes ────────────────────────────────────────────────
 // No auth — this is a read-only paper trading tracking dashboard
 
@@ -46,9 +48,20 @@ app.use('/api/trade', tradeRouter);
 
 const PORT = process.env.PORT || 5001;
 
-// Only listen if distinct from Vercel environment to allow local dev
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Serve frontend static files in production
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+app.use(express.static(clientDist));
+// SPA fallback: all non-API routes return index.html
+app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Start internal scheduler on boot (unless disabled for tests)
+const scheduler = require('./services/scheduler');
+if (process.env.DISABLE_SCHEDULER !== 'true') {
+    scheduler.start();
 }
 
 module.exports = app;

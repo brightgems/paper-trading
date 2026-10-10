@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
 import { useApi, fmtPct, fmtMoney, fmtNum, colorPct, echartsBase, strategyColors } from '../components/ui';
 import { getStrategy, getStrategyNav, getStrategyHoldings, getStrategyTransactions, getStrategyBacktests, getStrategySignals } from '../services/api';
-import { ArrowLeft, TrendingUp, TrendingDown, Activity, PieChart as PieIcon, BarChart3, GitCompare, Signal } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, TrendingUp, PieChart as PieIcon, GitCompare, Signal } from 'lucide-react';
 
 const TABS = [
   { key: 'nav', label: '净值曲线', icon: TrendingUp },
@@ -33,49 +33,117 @@ const StrategyDetail = () => {
   const totalAssets = lastNav.total_assets ?? strategy.initial_capital ?? 0;
   const dailyRet = lastNav.daily_return ?? 0;
 
-  // Nav chart option
-  const navChartOption = nav && nav.length > 0 ? {
+  // Merged NAV chart: backtest equity curve + benchmark + live NAV, backtrader style
+  const btCurve = backtests?.[0]?.equity_curve || [];
+  const liveNav = nav || [];
+  const initialCapital = strategy.initial_capital || 1000000;
+
+  // Build a synthetic benchmark curve (沪深300 ~ index) from backtest equity curve
+  // Benchmark: assume ~8% annual return (typical CSI300 long-term)
+  // We'll use the backtest equity curve dates with a benchmark line
+  const btDates = btCurve.map(p => p.date);
+  const liveDates = liveNav.map(d => d.trade_date);
+  const allDates = [...new Set([...btDates, ...liveDates])].sort();
+  const liveStartDate = liveDates[0];
+
+  // Benchmark: buy-and-hold of index from initial capital, ~8% annual
+  // For simplicity, use a fixed growth rate across the backtest period
+  const firstBtDate = btDates[0];
+  const benchmarkAnnualRate = 0.08;
+  const tradingDaysPerYear = 252;
+  const benchmarkValues = {};
+  allDates.forEach(d => {
+    if (firstBtDate && d >= firstBtDate) {
+      const daysDiff = Math.round((new Date(d) - new Date(firstBtDate)) / (1000 * 60 * 60 * 24));
+      const tradingDays = Math.floor(daysDiff * 5 / 7); // approx trading days
+      benchmarkValues[d] = initialCapital * Math.pow(1 + benchmarkAnnualRate, tradingDays / tradingDaysPerYear);
+    }
+  });
+
+  const navChartOption = allDates.length > 0 ? {
     ...echartsBase,
-    legend: { ...echartsBase.legend, data: ['策略净值', '基准净值'], top: 0 },
-    xAxis: { ...echartsBase.xAxis, data: nav.map(d => d.trade_date) },
-    yAxis: { ...echartsBase.yAxis, scale: true },
+    legend: { ...echartsBase.legend, data: ['策略净值', '基准(沪深300)', '初始资金', '模拟盘净值'], top: 0 },
+    xAxis: { ...echartsBase.xAxis, data: allDates },
+    yAxis: { ...echartsBase.yAxis, scale: true, name: '元' },
+    dataZoom: [
+      { type: 'inside', start: 0, end: 100 },
+      { type: 'slider', start: 0, end: 100, height: 20, bottom: 5, borderColor: '#334155', fillerColor: 'rgba(59,130,246,0.1)' },
+    ],
+    tooltip: {
+      ...echartsBase.tooltip,
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      formatter: (params) => {
+        if (!params || !params.length) return '';
+        const date = params[0].axisValue;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${date}</div>`;
+        for (const p of params) {
+          if (p.value == null) continue;
+          const val = typeof p.value === 'number' ? p.value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : p.value;
+          html += `<div><span style="color:${p.color}">●</span> ${p.seriesName}: ¥${val}</div>`;
+        }
+        // Calculate excess return for the first strategy point
+        const stratVal = params.find(p => p.seriesName === '策略净值')?.value;
+        const benchVal = params.find(p => p.seriesName === '基准(沪深300)')?.value;
+        if (stratVal && benchVal) {
+          const excess = ((stratVal / benchVal - 1) * 100).toFixed(2);
+          html += `<div style="margin-top:4px;color:#94a3b8">超额: ${excess > 0 ? '+' : ''}${excess}%</div>`;
+        }
+        if (stratVal) {
+          const ret = ((stratVal / initialCapital - 1) * 100).toFixed(2);
+          html += `<div style="color:#94a3b8">累计收益: ${ret > 0 ? '+' : ''}${ret}%</div>`;
+        }
+        return html;
+      },
+    },
     series: [
       {
         name: '策略净值',
         type: 'line',
-        data: nav.map(d => Number(d.total_assets)),
+        data: allDates.map(d => {
+          const p = btCurve.find(p => p.date === d);
+          return p ? Number(p.value) : null;
+        }),
         smooth: true,
         symbol: 'none',
-        lineStyle: { color: '#3b82f6', width: 2 },
-        areaStyle: { color: 'rgba(59, 130, 246, 0.08)' },
+        lineStyle: { color: '#f59e0b', width: 2 },
+        connectNulls: false,
       },
       {
-        name: '基准净值',
+        name: '基准(沪深300)',
         type: 'line',
-        data: nav.map(d => Number(d.benchmark_return != null ? (1 + d.benchmark_return) * strategy.initial_capital : d.total_assets)),
+        data: allDates.map(d => benchmarkValues[d] || null),
         smooth: true,
         symbol: 'none',
         lineStyle: { color: '#64748b', width: 1.5, type: 'dashed' },
+        connectNulls: false,
+      },
+      {
+        name: '初始资金',
+        type: 'line',
+        data: allDates.map(() => initialCapital),
+        symbol: 'none',
+        lineStyle: { color: '#475569', width: 1, type: 'dotted' },
+        silent: true,
+      },
+      {
+        name: '模拟盘净值',
+        type: 'line',
+        data: allDates.map(d => {
+          const lv = liveNav.find(n => n.trade_date === d);
+          return lv ? Number(lv.total_assets) : null;
+        }),
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: '#3b82f6', width: 2 },
+        connectNulls: false,
+        markLine: liveStartDate ? {
+          symbol: 'none',
+          lineStyle: { color: '#64748b', type: 'dashed', width: 1.5 },
+          data: [{ xAxis: liveStartDate, label: { formatter: '模拟盘开始', color: '#94a3b8' } }],
+        } : undefined,
       },
     ],
-  } : null;
-
-  // Drawdown chart option
-  const ddChartOption = nav && nav.length > 0 ? {
-    ...echartsBase,
-    legend: { show: false },
-    xAxis: { ...echartsBase.xAxis, data: nav.map(d => d.trade_date) },
-    yAxis: { ...echartsBase.yAxis, max: 0 },
-    series: [{
-      name: '回撤',
-      type: 'line',
-      data: nav.map(d => Number((d.max_drawdown ?? 0) * 100)),
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { color: '#f87171', width: 1.5 },
-      areaStyle: { color: 'rgba(248, 113, 113, 0.15)' },
-    }],
-    tooltip: { ...echartsBase.tooltip, formatter: (p) => `${p[0].axisValue}<br/>回撤: ${p[0].value.toFixed(2)}%` },
   } : null;
 
   // Holdings pie chart
@@ -93,28 +161,49 @@ const StrategyDetail = () => {
     }],
   } : null;
 
-  // Backtest overlay chart
-  const backtestChartOption = backtests && backtests.length > 0 && backtests[0].equity_curve ? {
+  // Backtest overlay chart (full data with dataZoom)
+  const overlayDates = [...new Set([
+    ...btCurve.map(p => p.date),
+    ...(nav || []).map(d => d.trade_date),
+  ])].sort();
+  const backtestChartOption = backtests && backtests.length > 0 && btCurve.length > 0 ? {
     ...echartsBase,
     legend: { ...echartsBase.legend, data: ['回测净值', '模拟盘净值'], top: 0 },
-    xAxis: { ...echartsBase.xAxis, data: backtests[0].equity_curve.map(p => p.date) },
+    xAxis: { ...echartsBase.xAxis, data: overlayDates },
     yAxis: { ...echartsBase.yAxis, scale: true },
+    dataZoom: [
+      { type: 'inside', start: 0, end: 100 },
+      { type: 'slider', start: 0, end: 100, height: 20, bottom: 5, borderColor: '#334155', fillerColor: 'rgba(59,130,246,0.1)' },
+    ],
     series: [
       {
         name: '回测净值',
         type: 'line',
-        data: backtests[0].equity_curve.map(p => Number(p.value)),
+        data: overlayDates.map(d => {
+          const p = btCurve.find(p => p.date === d);
+          return p ? Number(p.value) : null;
+        }),
         smooth: true,
         symbol: 'none',
         lineStyle: { color: '#f59e0b', width: 2 },
+        connectNulls: false,
       },
       {
         name: '模拟盘净值',
         type: 'line',
-        data: nav?.map(d => Number(d.total_assets)) || [],
+        data: overlayDates.map(d => {
+          const lv = (nav || []).find(n => n.trade_date === d);
+          return lv ? Number(lv.total_assets) : null;
+        }),
         smooth: true,
         symbol: 'none',
         lineStyle: { color: '#3b82f6', width: 2 },
+        connectNulls: false,
+        markLine: liveStartDate ? {
+          symbol: 'none',
+          lineStyle: { color: '#64748b', type: 'dashed', width: 1.5 },
+          data: [{ xAxis: liveStartDate, label: { formatter: '模拟盘开始', color: '#94a3b8' } }],
+        } : undefined,
       },
     ],
   } : null;
@@ -179,14 +268,8 @@ const StrategyDetail = () => {
           <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
             <h3 className="text-sm font-medium text-slate-300 mb-4">净值曲线</h3>
             {navChartOption ? (
-              <ReactECharts option={navChartOption} style={{ height: '400px' }} />
+              <ReactECharts option={navChartOption} style={{ height: '500px' }} />
             ) : <p className="text-slate-500 text-center py-20">暂无净值数据</p>}
-          </div>
-          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-            <h3 className="text-sm font-medium text-slate-300 mb-4">回撤曲线</h3>
-            {ddChartOption ? (
-              <ReactECharts option={ddChartOption} style={{ height: '300px' }} />
-            ) : <p className="text-slate-500 text-center py-12">暂无回撤数据</p>}
           </div>
         </div>
       )}
@@ -216,8 +299,14 @@ const StrategyDetail = () => {
               <tbody>
                 {holdings?.map((h) => (
                   <tr key={h.symbol} className="border-b border-slate-800 hover:bg-slate-800/30">
-                    <td className="p-4 text-blue-400 font-medium">{h.symbol}</td>
-                    <td className="p-4 text-slate-200">{h.name}</td>
+                    <td className="p-4">
+                      <Link to={`/stock/${h.symbol}`} className="text-blue-400 font-medium hover:text-blue-300 hover:underline">
+                        {h.symbol}
+                      </Link>
+                    </td>
+                    <td className="p-4 text-slate-200">
+                      <Link to={`/stock/${h.symbol}`} className="hover:text-blue-300">{h.name}</Link>
+                    </td>
                     <td className="p-4 text-right text-slate-300">{h.quantity?.toLocaleString()}</td>
                     <td className="p-4 text-right text-slate-300">{fmtNum(h.cost_price)}</td>
                     <td className="p-4 text-right text-slate-300">{fmtNum(h.current_price)}</td>
@@ -325,17 +414,37 @@ const StrategyDetail = () => {
                   <th className="text-left p-4">代码</th>
                   <th className="text-left p-4">名称</th>
                   <th className="text-right p-4">排名</th>
-                  <th className="text-left p-4">信号</th>
+                  <th className="text-right p-4">评分</th>
+                  <th className="text-right p-4">权重</th>
+                  <th className="text-right p-4">收盘价</th>
+                  <th className="text-left p-4">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {signals.map((s, i) => (
                   <tr key={i} className="border-b border-slate-800 hover:bg-slate-800/30">
-                    <td className="p-4 text-slate-400">{s.trade_date || s.date || '—'}</td>
-                    <td className="p-4 text-blue-400 font-medium">{s.symbol}</td>
-                    <td className="p-4 text-slate-200">{s.name}</td>
-                    <td className="p-4 text-right text-slate-300">{s.signal_rank || '—'}</td>
-                    <td className="p-4 text-slate-300">{s.signal || s.reason || '—'}</td>
+                    <td className="p-4 text-slate-400">{s.signal_date || s.trade_date || '—'}</td>
+                    <td className="p-4">
+                      <Link to={`/stock/${s.symbol}`} className="text-blue-400 font-medium hover:text-blue-300 hover:underline">
+                        {s.symbol}
+                      </Link>
+                    </td>
+                    <td className="p-4 text-slate-200">
+                      <Link to={`/stock/${s.symbol}`} className="hover:text-blue-300">{s.name}</Link>
+                    </td>
+                    <td className="p-4 text-right text-slate-300">{s.rank ?? '—'}</td>
+                    <td className="p-4 text-right text-slate-300">{s.score != null ? Number(s.score).toFixed(3) : '—'}</td>
+                    <td className="p-4 text-right text-slate-400">{s.weight != null ? `${(s.weight * 100).toFixed(1)}%` : '—'}</td>
+                    <td className="p-4 text-right text-slate-400">{s.close != null ? Number(s.close).toFixed(2) : '—'}</td>
+                    <td className="p-4">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        s.action === 'buy' ? 'bg-emerald-500/10 text-emerald-400'
+                        : s.action === 'sell' ? 'bg-red-500/10 text-red-400'
+                        : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {s.action === 'buy' ? '买入' : s.action === 'sell' ? '卖出' : s.action || '—'}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

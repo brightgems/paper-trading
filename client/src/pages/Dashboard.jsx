@@ -4,7 +4,7 @@ import api, { getPortfolio, getIndices } from '../services/api';
 import StockCard from '../components/StockCard';
 import MarketNews from '../components/MarketNews';
 import StopLossModal from '../components/StopLossModal';
-import { ArrowUpRight, TrendingUp, DollarSign, Activity, ShieldAlert } from 'lucide-react';
+import { ArrowUpRight, TrendingUp, Activity } from 'lucide-react';
 
 const Dashboard = () => {
     const [portfolio, setPortfolio] = useState([]);

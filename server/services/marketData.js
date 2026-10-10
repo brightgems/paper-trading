@@ -1,4 +1,5 @@
 const axios = require('axios');
+const iconv = require('iconv-lite');
 
 // 东方财富 secid 转换: 000001.SZ -> 0.000001, 600000.SH -> 1.600000, AAPL.US -> 105.AAPL, 0700.HK -> 116.0700
 function toSecid(symbol) {
@@ -41,62 +42,109 @@ const EM_BASE = 'http://push2.eastmoney.com';
 const EM_HIS = 'http://push2his.eastmoney.com';
 const EM_SEARCH = 'https://searchapi.eastmoney.com';
 const EM_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+const TX_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'Referer': 'https://gu.qq.com/' };
+
+// 腾讯行情: 688075.SH -> sh688075, 000541.SZ -> sz000541
+function toTxSymbol(symbol) {
+    const sym = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '');
+    if (symbol.endsWith('.SH') || symbol.startsWith('6')) return `sh${sym}`;
+    if (symbol.endsWith('.BJ') || sym.startsWith('8') || sym.startsWith('4')) return `bj${sym}`;
+    return `sz${sym}`;
+}
+
+// 解析腾讯行情字符串
+function parseTxQuote(raw) {
+    // v_sh688075="1~安旭生物~688075~30.89~30.64~30.60~928202~444198~484004~..."
+    const fields = raw.split('~');
+    if (fields.length < 50) return null;
+    return {
+        name: fields[1],              // 股票名称
+        code: fields[2],              // 股票代码
+        price: parseFloat(fields[3]), // 当前价
+        prevClose: parseFloat(fields[4]), // 昨收
+        open: parseFloat(fields[5]),  // 开盘
+        volume: parseInt(fields[6]),  // 成交量(手)
+        amount: parseFloat(fields[37]), // 成交额
+        high: parseFloat(fields[33]), // 最高
+        low: parseFloat(fields[34]),  // 最低
+        change: parseFloat(fields[31]), // 涨跌额
+        changePercent: parseFloat(fields[32]), // 涨跌幅%
+        marketCap: parseFloat(fields[45]) * 10000, // 总市值(元)
+    };
+}
 
 class MarketDataService {
 
     // 实时行情
     static async getRealTimePrice(symbol) {
         try {
-            const normalized = normalizeSymbol(symbol);
-            const secid = toSecid(normalized);
-            const resp = await axios.get(`${EM_BASE}/api/qt/stock/get`, {
-                params: { secid, fields: 'f43,f44,f45,f46,f47,f48,f50,f51,f52,f55,f57,f58,f59,f60,f116,f117,f169,f170,f171' },
-                headers: EM_HEADERS,
-                timeout: 8000,
-                proxy: false
+            const txSym = toTxSymbol(normalizeSymbol(symbol));
+            const resp = await axios.get(`https://qt.gtimg.cn/q=${txSym}`, {
+                headers: TX_HEADERS,
+                timeout: 5000,
+                proxy: false,
+                responseType: 'arraybuffer',
             });
-            const d = resp.data?.data;
-            if (!d) return this._getMockPrice(symbol);
-            // f59=小数位数, 价格需除以10^f59还原; A股f59默认2(即/100), 美股f59可能不同
-            const dec = d.f59 != null ? d.f59 : 2;
-            return d.f43 / Math.pow(10, dec);
+            const text = iconv.decode(Buffer.from(resp.data), 'gbk');
+            const match = text.match(/="([^"]+)"/);
+            if (!match || !match[1]) return this._getMockPrice(symbol);
+            const q = parseTxQuote(match[1]);
+            return q ? q.price : this._getMockPrice(symbol);
         } catch (e) {
             return this._getMockPrice(symbol);
         }
+    }
+
+    // 获取股票名称 (search API)
+    static async getStockName(symbol) {
+        try {
+            const code = symbol.replace('.SH', '').replace('.SZ', '').replace('.BJ', '');
+            const resp = await axios.get(`${EM_SEARCH}/api/suggest/get`, {
+                params: { input: code, type: '14', token: 'D43BF722C8E33BDC906FB84D85E326E8' },
+                headers: EM_HEADERS,
+                timeout: 5000,
+                proxy: false
+            });
+            const table = resp.data?.QuotationCodeTable;
+            const data = table?.Data || table;
+            const arr = Array.isArray(data) ? data : (data?.Data ? data.Data : []);
+            const match = arr.find(item => item.Code === code);
+            return match?.Name || null;
+        } catch { return null; }
     }
 
     // 完整报价
     static async getFullQuote(symbol) {
         try {
             const normalized = normalizeSymbol(symbol);
-            const secid = toSecid(normalized);
-            const resp = await axios.get(`${EM_BASE}/api/qt/stock/get`, {
-                params: { secid, fields: 'f43,f44,f45,f46,f47,f48,f50,f51,f52,f55,f57,f58,f59,f60,f116,f117,f169,f170,f171' },
-                headers: EM_HEADERS,
-                timeout: 8000,
-                proxy: false
+            const txSym = toTxSymbol(normalized);
+            const resp = await axios.get(`https://qt.gtimg.cn/q=${txSym}`, {
+                headers: TX_HEADERS,
+                timeout: 5000,
+                proxy: false,
+                responseType: 'arraybuffer',
             });
-            const d = resp.data?.data;
-            if (!d) throw new Error('no data');
-            // f59=小数位数, 价格需除以10^f59还原
-            const dec = d.f59 != null ? d.f59 : 2;
-            const div = Math.pow(10, dec);
+            const text = iconv.decode(Buffer.from(resp.data), 'gbk');
+            const match = text.match(/="([^"]+)"/);
+            if (!match || !match[1]) throw new Error('no data');
+            const q = parseTxQuote(match[1]);
+            if (!q) throw new Error('parse failed');
             return {
-                price: d.f43 / div,           // 现价
-                change: d.f169 / div,         // 涨跌额
-                changePercent: d.f170 / 100,  // 涨跌幅% (百分比始终/100)
-                previousClose: d.f60 / div,   // 昨收
-                open: d.f46 / div,            // 开盘
-                high: d.f44 / div,            // 最高
-                low: d.f45 / div,             // 最低
-                volume: d.f47,                // 成交量(手)
-                amount: d.f48,                // 成交额
-                name: d.f58,                  // 名称
-                code: d.f57,                  // 代码
-                marketCap: d.f116,            // 总市值
-                floatCap: d.f117,             // 流通市值
-                pe: d.f50 / div,              // PE
-                pb: d.f55 / div,              // PB
+                price: q.price,
+                change: q.change,
+                changePercent: q.changePercent,
+                previousClose: q.prevClose,
+                open: q.open,
+                high: q.high,
+                low: q.low,
+                volume: q.volume,
+                amount: q.amount,
+                name: q.name,
+                code: q.code,
+                marketCap: q.marketCap,
+                floatCap: null,
+                pe: null,
+                pb: null,
             };
         } catch (error) {
             return {
@@ -107,46 +155,58 @@ class MarketDataService {
         }
     }
 
-    // K线数据
+    // K线数据 — use Tencent historical API
     static async getChartData(symbol, range = '1d') {
         try {
-            const secid = toSecid(normalizeSymbol(symbol));
-            // klt: 1=1分 5=5分 15=15分 30=30分 60=60分 101=日 102=周 103=月
-            let klt = 101, beg = '20200101';
-            const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const normalized = normalizeSymbol(symbol);
+            const txSym = toTxSymbol(normalized);
             const rangeUpper = range.toUpperCase();
 
-            if (rangeUpper === '1D') { klt = 5; beg = today; }
-            else if (rangeUpper === '1W') { klt = 15; beg = today; }
-            else if (rangeUpper === '1M') { klt = 101; 
-                const d = new Date(); d.setMonth(d.getMonth() - 1); beg = d.toISOString().slice(0,10).replace(/-/g,''); }
-            else if (rangeUpper === '3M' || rangeUpper === '3MO') { klt = 101;
-                const d = new Date(); d.setMonth(d.getMonth() - 3); beg = d.toISOString().slice(0,10).replace(/-/g,''); }
-            else if (rangeUpper === '6M') { klt = 101;
-                const d = new Date(); d.setMonth(d.getMonth() - 6); beg = d.toISOString().slice(0,10).replace(/-/g,''); }
-            else if (rangeUpper === '1Y') { klt = 102;
-                const d = new Date(); d.setFullYear(d.getFullYear() - 1); beg = d.toISOString().slice(0,10).replace(/-/g,''); }
-            else { klt = 101; 
-                const d = new Date(); d.setMonth(d.getMonth() - 1); beg = d.toISOString().slice(0,10).replace(/-/g,''); }
+            // 腾讯日K: https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh688075,day,2020-01-01,,640,qfq
+            let klt = 'day';
+            let count = 30;
+            if (rangeUpper === '1D') { klt = 'day'; count = 1; }
+            else if (rangeUpper === '1W') { klt = 'day'; count = 5; }
+            else if (rangeUpper === '1M') { klt = 'day'; count = 30; }
+            else if (rangeUpper === '6M') { klt = 'day'; count = 120; }
+            else if (rangeUpper === '1Y') { klt = 'day'; count = 250; }
+            else { klt = 'day'; count = 30; }
 
-            const resp = await axios.get(`${EM_HIS}/api/qt/stock/kline/get`, {
-                params: { secid, klt, fqt: 1, beg, end: '20500101', fields: 'f51,f52,f53,f54,f55,f56,f57' }
+            const resp = await axios.get(`https://web.ifzq.gtimg.cn/appstock/app/fqkline/get`, {
+                params: { param: `${txSym},${klt},2020-01-01,,${count},qfq` },
+                headers: TX_HEADERS,
+                timeout: 8000,
+                proxy: false,
             });
-            const klines = resp.data?.data?.klines;
-            if (!klines || klines.length === 0) return this._getMockChart(symbol, rangeUpper);
 
-            return klines.map(k => {
-                const [date, open, close, high, low, volume, amount] = k.split(',');
-                return {
-                    time: date,
-                    open: parseFloat(open),
-                    high: parseFloat(high),
-                    low: parseFloat(low),
-                    close: parseFloat(close),
-                    volume: parseInt(volume),
-                    amount: parseFloat(amount)
-                };
-            });
+            const data = resp.data?.data?.[txSym];
+            if (!data) {
+                // Try without prefix
+                const key = Object.keys(resp.data?.data || {})[0];
+                if (!key) return this._getMockChart(symbol, rangeUpper);
+                const klines = resp.data.data[key]?.[klt] || resp.data.data[key]?.qfqday || [];
+                if (!klines.length) return this._getMockChart(symbol, rangeUpper);
+                return klines.map(k => ({
+                    time: k[0],
+                    open: parseFloat(k[1]),
+                    close: parseFloat(k[2]),
+                    high: parseFloat(k[3]),
+                    low: parseFloat(k[4]),
+                    volume: parseInt(k[5]) || 0,
+                }));
+            }
+
+            const klines = data?.[klt] || data?.qfqday || [];
+            if (!klines.length) return this._getMockChart(symbol, rangeUpper);
+
+            return klines.map(k => ({
+                time: k[0],
+                open: parseFloat(k[1]),
+                close: parseFloat(k[2]),
+                high: parseFloat(k[3]),
+                low: parseFloat(k[4]),
+                volume: parseInt(k[5]) || 0,
+            }));
         } catch (error) {
             return this._getMockChart(symbol, range);
         }

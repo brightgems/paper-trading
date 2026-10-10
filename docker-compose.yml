@@ -1,0 +1,18 @@
+services:
+  paper-trading:
+    build: .
+    container_name: paper-trading
+    ports:
+      - "5001:5001"
+    volumes:
+      # Persist SQLite database
+      - paper-trading-data:/app/server/data
+      # Mount signal CSVs from host (read-only)
+      - /git/quant_factors/results:/data/signals:ro
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+    restart: unless-stopped
+
+volumes:
+  paper-trading-data:

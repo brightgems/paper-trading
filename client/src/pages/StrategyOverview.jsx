@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useApi, fmtPct, fmtMoney, fmtNum, colorPct, echartsBase, strategyColors } from '../components/ui';
+import { useApi, fmtPct, fmtMoney, fmtNum, colorPct, strategyColors } from '../components/ui';
 import { getStrategies, getStrategyNav } from '../services/api';
 import { BarChart3, TrendingUp, TrendingDown, Activity, Wallet } from 'lucide-react';
 

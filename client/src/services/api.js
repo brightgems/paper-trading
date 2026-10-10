@@ -33,4 +33,22 @@ export const getEngineStatus = () => api.get('/strategy/engine/status');
 export const getIndices = () => api.get('/trade/indices');
 export const getStockPrice = (symbol) => api.get(`/trade/price/${symbol}`);
 
+// ─── Stock Detail (trade endpoints) ──────────────────────────────
+export const getStockCandles = (symbol, range) =>
+  api.get(`/trade/candles/${symbol}`, { params: { range } });
+export const getCompanyProfile = (symbol) => api.get(`/trade/profile/${symbol}`);
+export const getFinancials = (symbol) => api.get(`/trade/financials/${symbol}`);
+export const getRecommendations = (symbol) =>
+  api.get(`/trade/recommendations/${symbol}`);
+export const getCompanyNews = (symbol) => api.get(`/trade/news/${symbol}`);
+export const getMarketNews = () => api.get('/trade/news/market');
+
+// ─── Auth / Portfolio (legacy endpoints) ─────────────────────────
+export const getPortfolio = () => api.get('/trade/portfolio');
+export const getTransactions = (params) =>
+  api.get('/trade/transactions', { params });
+export const getMe = () => api.get('/auth/me');
+export const updateProfile = (data) => api.put('/profile', data);
+export const resetTpin = (data) => api.post('/auth/reset-tpin', data);
+
 export default api;
